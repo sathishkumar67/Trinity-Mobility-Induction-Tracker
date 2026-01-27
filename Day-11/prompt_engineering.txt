@@ -1,0 +1,6 @@
+Zero Shot Prompts (No Examples)
+1. Text Classification
+    Prompt: Classify the following text as Positive, Negative, or Neutral.
+    Text: The product works fine, but delivery was late.
+2. Summarization
+    Prompt: 
