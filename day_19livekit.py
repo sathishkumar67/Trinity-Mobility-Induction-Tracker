@@ -9,24 +9,21 @@ from livekit import agents
 from livekit.agents import AgentSession, JobContext, WorkerOptions, cli, function_tool, room_io
 from livekit.plugins import silero, noise_cancellation
 
-# Load Spacy
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
     print("Warning: Spacy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm")
     nlp = None
 
-# Configuration
 JSON_DIR = Path("conversation_json")
 DB_FILE = Path("emergency_data.db")
 
-# Create directories if they don't exist
 JSON_DIR.mkdir(exist_ok=True)
 
 load_dotenv()
 
 class SQLiteManager:
-    """Handles SQLite Operations with Debug Logging"""
+
     def __init__(self, db_path):
         self.db_path = db_path
         self.init_db()
@@ -35,7 +32,7 @@ class SQLiteManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            # Column names defined here must match the INSERT query below
+
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS incidents (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,8 +61,7 @@ class SQLiteManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # FIXED: Column names match the CREATE TABLE statement (snake_case)
+
             query = """
                 INSERT INTO incidents 
                 (ticket_id, timestamp, caller_name, location, incident_type, classification, confidence, priority, sentiment, description, language, json_file_path)
@@ -74,9 +70,9 @@ class SQLiteManager:
             cursor.execute(query, (
                 data['ticket_id'],
                 data['timestamp'],
-                data['name'],          # Maps to caller_name column
+                data['name'],          
                 data['location'],
-                data['type'],          # Maps to incident_type column
+                data['type'],          
                 data['classification'],
                 data['confidence'],
                 data['priority'],
@@ -93,7 +89,6 @@ class SQLiteManager:
             print(f"[DB ERROR] Failed to write ticket: {e}")
             return f"DB Error: {str(e)}"
 
-# Initialize DB Manager globally
 db_manager = SQLiteManager(DB_FILE)
 
 class IndicAssistant(agents.Agent):
@@ -162,33 +157,31 @@ class IndicAssistant(agents.Agent):
         if self._report_submitted:
             return "Report already submitted."
 
-        # Generate Ticket ID with Microseconds to prevent collisions
         ticket_id = f"INC-{datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         timestamp = datetime.datetime.now().isoformat()
-        
+
         print(f"[TOOL] submit_emergency_report called for {ticket_id}")
 
         db_data = {
-            "ticket_id": ticket_id,
-            "timestamp": timestamp,
-            "name": caller_name,
-            "location": location,
-            "type": incident_type,
-            "classification": call_classification,
-            "confidence": confidence_score,
-            "priority": priority,
-            "sentiment": sentiment,
-            "description": description,
-            "language": self.current_language
+            : ticket_id,
+            : timestamp,
+            : caller_name,
+            : location,
+            : incident_type,
+            : call_classification,
+            : confidence_score,
+            : priority,
+            : sentiment,
+            : description,
+            : self.current_language
         }
 
-        # 1. Save JSON File
         json_filename = JSON_DIR / f"incident_{ticket_id}.json"
         conversation_data = {
-            "metadata": db_data,
-            "conversation_log": self.conversation_history
+            : db_data,
+            : self.conversation_history
         }
-        
+
         try:
             with open(json_filename, "w", encoding="utf-8") as f:
                 json.dump(conversation_data, f, ensure_ascii=False, indent=4)
@@ -196,7 +189,6 @@ class IndicAssistant(agents.Agent):
         except Exception as e:
             print(f"[ERROR] Failed to save JSON: {e}")
 
-        # 2. Extract Metadata from the JSON File (as requested)
         extracted_metadata = {}
         try:
             with open(json_filename, "r", encoding="utf-8") as f:
@@ -205,12 +197,11 @@ class IndicAssistant(agents.Agent):
                 print(f"[FILE] Metadata extracted from JSON successfully.")
         except Exception as e:
             print(f"[ERROR] Failed to read JSON for metadata extraction: {e}")
-            # Fallback to in-memory data if file read fails
+
             extracted_metadata = db_data
 
-        # 3. Write to SQLite using the extracted metadata
         db_result = db_manager.insert_incident(extracted_metadata, str(json_filename))
-        
+
         self._report_submitted = True
 
         if "Success" in db_result:
@@ -227,7 +218,6 @@ class IndicAssistant(agents.Agent):
             pass
         return "Disconnecting call. Stay safe."
 
-# change stt, llm, tts to use local hosted models. currently using cloud models.
 async def entrypoint(ctx: JobContext):
     session = AgentSession(
         stt="deepgram/nova-3:multi",
@@ -236,16 +226,16 @@ async def entrypoint(ctx: JobContext):
         vad=silero.VAD.load(),
         turn_detection="vad",
     )
-    
+
     assistant = IndicAssistant()
-        
+
     @session.on("user_input_transcribed")
     def on_user(evt):
         if evt.is_final:
             assistant.conversation_history.append({
-                "role": "user",
-                "content": evt.transcript,
-                "timestamp": datetime.datetime.now().isoformat()
+                : "user",
+                : evt.transcript,
+                : datetime.datetime.now().isoformat()
             })
             print(f"[USER] {evt.transcript}")
 
@@ -254,12 +244,12 @@ async def entrypoint(ctx: JobContext):
         if hasattr(evt, 'item'):
             if evt.item.role == 'assistant' and evt.item.text_content:
                 assistant.conversation_history.append({
-                    "role": "assistant",
-                    "content": evt.item.text_content,
-                    "timestamp": datetime.datetime.now().isoformat()
+                    : "assistant",
+                    : evt.item.text_content,
+                    : datetime.datetime.now().isoformat()
                 })
                 print(f"[AGENT] {evt.item.text_content}")
-            
+
             if evt.item.type == "function_call":
                 print(f"[TOOL CALL] {evt.item.name}")
 
@@ -272,10 +262,9 @@ async def entrypoint(ctx: JobContext):
             ),
         ),
     )
-    
+
     await ctx.connect()
     await session.say("Emergency Helpline. What is your emergency?", allow_interruptions=True)
-    
-    
+
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
